@@ -1,26 +1,18 @@
-digraph mygraph {
-  node [shape=box];
-  "//absl/random:random"
-  "//absl/random:random" -> "//absl/random:distributions"
-  "//absl/random:random" -> "//absl/random:seed_sequences"
-  "//absl/random:random" -> "//absl/random/internal:pool_urbg"
-  "//absl/random:random" -> "//absl/random/internal:nonsecure_base"
-  "//absl/random:distributions"
-  "//absl/random:distributions" -> "//absl/strings:strings"
-  "//absl/random:seed_sequences"
-  "//absl/random:seed_sequences" -> "//absl/random/internal:seed_material"
-  "//absl/random:seed_sequences" -> "//absl/random/internal:salted_seed_seq"
-  "//absl/random:seed_sequences" -> "//absl/random/internal:pool_urbg"
-  "//absl/random:seed_sequences" -> "//absl/random/internal:nonsecure_base"
-  "//absl/random/internal:nonsecure_base"
-  "//absl/random/internal:nonsecure_base" -> "//absl/random/internal:pool_urbg"
-  "//absl/random/internal:nonsecure_base" -> "//absl/random/internal:salted_seed_seq"
-  "//absl/random/internal:nonsecure_base" -> "//absl/random/internal:seed_material"
-  "//absl/random/internal:pool_urbg"
-  "//absl/random/internal:pool_urbg" -> "//absl/random/internal:seed_material"
-  "//absl/random/internal:salted_seed_seq"
-  "//absl/random/internal:salted_seed_seq" -> "//absl/random/internal:seed_material"
-  "//absl/random/internal:seed_material"
-  "//absl/random/internal:seed_material" -> "//absl/strings:strings"
-  "//absl/strings:strings"
+graph G {
+0 [pos = "0,0!"]
+1 [pos = "0,-1!"]
+2 [pos = "1,-1!"]
+3 [pos = "1,0!"]
+4 [pos = "1,1!" style="invis"]
+5 [pos = "0,1!" style="invis"]
+6 [pos = "-1,0!" style="invis"]
+3--0
+2--3
+1--2
+0--1
+0--2
+3--4
+4--5
+5--6
+6--1
 }
