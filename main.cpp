@@ -196,19 +196,21 @@ std::unordered_set <int> segmented;
 std::unordered_set <int> visited_on_segment;
 
 //function to dfs through segments (excluding cycles)
-bool is_path_found = false;
+bool is_path_founded = false;
  void section_dfs (section& elem, const int& edge_ind, int prev_vertex) {
-    if (visited_on_segment.contains(prev_vertex) || is_path_found) {
+    if (visited_on_segment.contains(prev_vertex) || is_path_founded) {
         return;
     }
     elem.vertexes.insert(prev_vertex);
     visited_on_segment.insert(prev_vertex);
-    if (points[prev_vertex].is_in_cycle && elem.vertexes.size() >= 2) {
-        is_path_found = true;
+    if ((points[prev_vertex].is_in_cycle || points[prev_vertex].color == black) &&
+    elem.vertexes.size() >= 2) {
+        is_path_founded = true;
         return;
     }
+    points[prev_vertex].color = black;
     for (auto &i : points[prev_vertex].edges_ind) {
-        if (!edges[i].is_in_cycle && !segmented.count(i)) {
+        if (!edges[i].is_in_cycle && !segmented.count(i) && !is_path_founded) {
             segmented.insert(i);
             elem.edges.push_back(i);
             section_dfs(elem, i, edges[i].leads[find_leads]);
@@ -221,17 +223,22 @@ void get_sections () {
 
     int prev_added = -1;
     int ind = 0;
+    int contact_vert_num = -1;
     for (auto const &i : edges) {
-        if (i.is_in_cycle || segmented.count(ind)) {
+        contact_vert_num = (points[i.leads[0]].is_in_cycle || points[i.leads[0]].color == black) ?  0 : 1;
+        if (i.is_in_cycle || segmented.count(ind) ||
+            !(points[i.leads[contact_vert_num]].is_in_cycle ||
+            points[i.leads[contact_vert_num]].color == black)) {
             ++ind;
             continue;
         }
         section elem;
-        elem.vertexes.insert(i.leads[0]);
+        elem.vertexes.insert(i.leads[contact_vert_num]);
         elem.edges.push_back(ind);
         segmented.insert(ind);
         visited_on_segment.clear();
-        section_dfs(elem, ind, i.leads[1]);
+        is_path_founded = false;
+        section_dfs(elem, ind, i.leads[contact_vert_num == 0? 1 : 0]);
         ++ind;
 
 
@@ -324,24 +331,26 @@ void add_spline_segment(int prev_p, int new_p) {
         }
          is_on_top = best_next_point->y == 0;
 
-         if (is_on_top) {
-             points.emplace_back(best_next_point->x , best_next_point->y + BASE_CUR_STEP, spline);
-         }
-         else {
-             points.emplace_back(best_next_point->x , best_next_point->y - BASE_CUR_STEP, spline);
-         }
-         add_spline_segment(prev_vertex, points.size() -1);
          if (best_next_point->y != current_p->y){
              points.emplace_back(best_next_point->x + direction, current_p->y, spline);
              add_spline_segment(points.size() - 2, points.size() -1);
              points.emplace_back(best_next_point->x + direction, best_next_point->y, spline);
              add_spline_segment(points.size() - 2, points.size() -1);
              points.emplace_back(best_next_point->x, is_on_top? best_next_point->y + BASE_CUR_STEP :
-                                              best_next_point->y - BASE_CUR_STEP, spline);
+                         best_next_point->y - BASE_CUR_STEP, spline);
              add_spline_segment(points.size() - 2, points.size() -1);
              //change direction
              direction = direction == BASE_CUR_STEP ?  -BASE_CUR_STEP : BASE_CUR_STEP;
+         } else {
+             if (is_on_top) {
+                 points.emplace_back(best_next_point->x , best_next_point->y + BASE_CUR_STEP, spline);
+             }
+             else {
+                 points.emplace_back(best_next_point->x , best_next_point->y - BASE_CUR_STEP, spline);
+             }
+             add_spline_segment(prev_vertex, points.size() -1);
          }
+
         current_p = best_next_point;
 
         //! mb  incorrect
@@ -445,7 +454,7 @@ void insert_segment (section_iter iter) {
  void read_data() {
     int size;
     std::fstream input;
-    input.open("5.txt", std::ios_base::in);
+    input.open("1.txt", std::ios_base::in);
     input >> size;
     points.resize(size);
 
@@ -574,8 +583,8 @@ int main() {
     }
     get_cycle_edges();
     assign_pos_cycle();
-    get_sections();
     init_faces();
+    get_sections();
 
     while (!sections.empty()) {
 
