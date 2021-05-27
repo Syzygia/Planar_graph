@@ -93,7 +93,7 @@ struct section {
   //using vertex_iter = std::vector<point>::iterator;
   //using edge_iter = std::vector<edge>::iterator;
 
-  std::unordered_set<int> vertexes;
+  std::set<int> vertexes;
   std::vector<int> edges;
   int com_faces_num = 2;
   std::set<int> com_faces {0, 1};
@@ -373,8 +373,6 @@ void add_spline_segment(int prev_p, int new_p) {
      }
      auto &prev_face = faces[*face_to_sep];
      face new_face;
-     int ind = 0;
-     bool is_equal = false;
      double x_border = -100;
      x_border = points[*(section_iter->vertexes.begin())].x;
 
@@ -412,38 +410,40 @@ void add_spline_segment(int prev_p, int new_p) {
 
 
     prev_face.edges.insert(section_iter->edges.begin(), section_iter->edges.end());
+    inserted_edges.push_back(section_iter->edges[0]);
+    new_face.vertexes.insert(section_iter->vertexes.begin(), section_iter->vertexes.end());
     edges[section_iter->edges[0]].faces_ind[0] = *face_to_sep;
     edges[section_iter->edges[0]].faces_ind[1] = faces.size();
-    inserted_edges.push_back(section_iter->edges[0]);
+    if (section_iter->vertexes.size() > 2) {
+        //need to check whether contactpoints always on edge of vector!!!
+        auto contact_a = points[*section_iter->vertexes.begin()];
+        auto contact_b = points[*section_iter->vertexes.rbegin()];
+        if (contact_a.x == contact_b.x) {
+            for (auto const &edge_ind : contact_a.edges_ind) {
+                if (edges[edge_ind])
+            }
+        }
+        for (auto &i : section_iter->vertexes) {
+            if (!points[i].is_in_cycle) {
+                points[i].faces.insert({*face_to_sep, (int)faces.size()});
+                points[i]
+            }
+        }
 
+    }
 
-    //!!!!!!!!!!! potential memory leak
+    //?
     new_face.edges.insert(*section_iter->edges.begin());
 
-//    //change face relation in ribs of inserted segment
-//    for (auto const &i: new_face.vertexes) {
-//         for (auto const &j : points[i].inserted_edges_ind) {
-//             //!
-//             if (points[edges[j].leads[0]].faces.contains(faces.size()) &&
-//                 points[edges[j].leads[1]].faces.contains(faces.size())) {
-//                 // this is kinda wrong!!!!!!!!!!!!!
-//                 edges[j].faces[1] = faces.size();
-//                 new_face.edges.insert(j);
-//        //                 if (!section_iter->vertexes.contains(i)) {
-//        //                    prev_face.edges.erase(j);
-//        //                 }
-//             }
-//        }
-//    }
     faces.push_back(new_face);
  }
 
 
 void insert_segment (section_iter iter) {
 
-    if (iter->vertexes.size() == 2) {
-        one_edge_face_separation(iter);
-    }
+
+    one_edge_face_separation(iter);
+
     // insert segmented part in graph, in new face
     //TODO OUTER FACE, insert of complex segments
 
