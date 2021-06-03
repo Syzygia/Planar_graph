@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <numeric>
+#include <valarray>
 
 #define OUTER_FACE 0
 
@@ -19,7 +20,7 @@
 
 typedef enum Color{white,grey,black} Color;
 
-int BASE_CUR_STEP = 1;
+int BASE_CUR_STEP = 10;
 
 typedef enum Point_type{standard, spline} Point_type;
 
@@ -88,12 +89,13 @@ std::vector<point> points;
 std::vector<int> inserted_edges;
 std::vector<int> cycle_vertexes;
 std::vector<int> cycle_edges;
+std::set<int> inserted_points = {};
 
 struct section {
   //using vertex_iter = std::vector<point>::iterator;
   //using edge_iter = std::vector<edge>::iterator;
 
-  std::set<int> vertexes;
+  std::vector<int> vertexes;
   std::vector<int> edges;
   int com_faces_num = 2;
   std::set<int> com_faces {0, 1};
@@ -109,12 +111,10 @@ struct section {
       for (auto const &i : vertexes) {
           buf2.clear();
           //!
-          if (!points[i].is_in_cycle) {
+          if (!points[i].is_in_cycle && !inserted_points.contains(i)) {
               continue;
           }
-          for (auto const &j : points[i].faces) {
-              buf2.insert(j);
-          }
+          buf2.insert(points[i].faces.begin(), points[i].faces.end());
           std::set_intersection(buf1.begin(), buf1.end(), buf2.begin(), buf2.end(),
                                 std::inserter(buf3, buf3.begin()));
           buf1 = buf3;
@@ -201,7 +201,7 @@ bool is_path_founded = false;
     if (visited_on_segment.contains(prev_vertex) || is_path_founded) {
         return;
     }
-    elem.vertexes.insert(prev_vertex);
+    elem.vertexes.push_back(prev_vertex);
     visited_on_segment.insert(prev_vertex);
     if ((points[prev_vertex].is_in_cycle || points[prev_vertex].color == black) &&
     elem.vertexes.size() >= 2) {
@@ -233,7 +233,7 @@ void get_sections () {
             continue;
         }
         section elem;
-        elem.vertexes.insert(i.leads[contact_vert_num]);
+        elem.vertexes.push_back(i.leads[contact_vert_num]);
         elem.edges.push_back(ind);
         segmented.insert(ind);
         visited_on_segment.clear();
@@ -250,8 +250,56 @@ void get_sections () {
 //inserts segment to  cycle subgraph
 using section_iter = std::vector<section>::iterator;
 
-//connects 2 spline points and gives them edge, and face relation
 
+inline int area (point const &a, point const &b,point const &c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+inline bool intersect_1 (double a, double b, double c, double d) {
+    if (a > b)  std::swap (a, b);
+    if (c > d)  std::swap (c, d);
+    return std::max(a,c) <= std::min(b,d);
+}
+
+bool intersect (point const & a, point const & b, point const & c, point const & d) {
+    return intersect_1(a.x, b.x, c.x, d.x)
+        && intersect_1(a.y, b.y, c.y, d.y)
+        && area(a, b, c) * area(a, b, d) <= 0
+        && area(c, d, a) * area(c, d, b) <= 0;
+}
+
+std::pair<double, double> find_place (int face_ind, double x, double y, double radius, int point_a, int point_b = -1) {
+     double x_new = 0;
+     double y_new = 0;
+     int theta = 0;
+     bool is_break = false;
+     for (theta = 0; theta <= 360; theta++) {
+         x_new = radius * cos(theta);
+         y_new = radius * sin(theta);
+         is_break = false;
+         for (auto const &edge_ind: faces[face_ind].edges) {
+            if (intersect(point(x_new, y_new), points[point_a],
+                          points[edges[edge_ind].leads[0]], points[edges[edge_ind].leads[1]]) ||
+                point_b != -1 && intersect(point(x_new, y_new), points[point_b],
+                                           points[edges[edge_ind].leads[0]], points[edges[edge_ind].leads[1]])) {
+                is_break = true;
+                break;
+            }
+         }
+         if (is_break) {
+             continue;
+         }
+         break;
+     }
+     if (theta == 361) {
+         std::cout << 'can not find place';
+         exit;
+     }
+     return std::make_pair(x_new, y_new);
+ }
+
+
+//connects 2 spline points and gives them edge, and face relation
 void add_spline_segment(int prev_p, int new_p) {
     //HUGE ERROR IF 1 FACE WAS CHANGED???
     points[prev_p].edges_ind.push_back(edges.size());
@@ -366,95 +414,169 @@ void add_spline_segment(int prev_p, int new_p) {
      //watch out f
  }
 
- void one_edge_face_separation (section_iter section_iter) {
-     auto face_to_sep = std::max_element(section_iter->com_faces.begin(), section_iter->com_faces.end());
-     if (*face_to_sep == OUTER_FACE) {
+ void draw_line(const point &start, const point &end, std::vector<int> const &vertexes, std::vector<int> edges_inds,
+                bool is_spline_type, bool is_x_axis, int prev_face) {
+    double step_main = 0;
+    double step_collateral = 0;
+    double direction = 0;
+    int count = -1;
+    int edge_ind = 0;
+    int prev_vertex_ind = -1;
+    for (auto const &j: vertexes) {
+        if (prev_vertex_ind != -1) {
+            points[j].inserted_edges_ind.push_back(edges_inds[edge_ind - 1]);
+        }
+        prev_vertex_ind = j;
+        if (edge_ind < edges_inds.size()) {
+            points[j].inserted_edges_ind.push_back(edges_inds[edge_ind++]);
+        }
+        ++count;
+        if (points[j].is_in_cycle || *vertexes.begin() == j || vertexes.back() == j) {
+            points[j].faces.insert({prev_face, (int)faces.size()});
+            continue;
+        } else {
+            points[j].faces = {prev_face, (int)faces.size()};
+        if (!is_x_axis) {
+            step_main = (end.x - start.x) / (double) vertexes.size();
+            step_collateral = (end.y - start.y) / (double) vertexes.size();
+            direction = start.y != 0? BASE_CUR_STEP / (double) vertexes.size() :
+                -BASE_CUR_STEP / (double) vertexes.size();
+            points[j].x = start.x + step_main * count;
+            points[j].y = start.y + (is_spline_type ? direction : 0) + step_collateral * count;
+        } else {
+            step_main = (end.y - start.y) / (double) vertexes.size();
+            step_collateral = (end.x - start.x) / (double) vertexes.size();
+            direction = start.x == 0? BASE_CUR_STEP / (double) vertexes.size():
+                -BASE_CUR_STEP / (double) vertexes.size();
+            points[j].y = start.y + step_main * count;
+            points[j].x = start.x + (is_spline_type ? direction : 0) + step_collateral * count;
+            }
+        }
+    }
+}
+
+
+
+void insert_segment (section_iter &section_iter) {
+    auto face_to_sep = std::max_element(section_iter->com_faces.begin(), section_iter->com_faces.end());
+    if (*face_to_sep == OUTER_FACE) {
+        std::copy(section_iter->vertexes.begin(), section_iter->vertexes.end(),
+                  std::inserter(inserted_points, inserted_points.end()));
         return construct_path(*section_iter->vertexes.begin(), *(++section_iter->vertexes.begin()));
-     }
-     auto &prev_face = faces[*face_to_sep];
-     face new_face;
-     double x_border = -100;
-     x_border = points[*(section_iter->vertexes.begin())].x;
+    }
+    auto &prev_face = faces[*face_to_sep];
+    face new_face;
+    double k_coeff = (points[*(section_iter->vertexes.begin())].y - points[(section_iter->vertexes.back())].y) /
+        (points[*(section_iter->vertexes.begin())].x - points[(section_iter->vertexes.back())].x);
+    double b_coeff = points[*(section_iter->vertexes.begin())].y -
+        k_coeff * points[*(section_iter->vertexes.begin())].x;
+    bool is_horisontal = points[*(section_iter->vertexes.begin())].x == points[section_iter->vertexes.back()].x;
+    double x_border = points[*(section_iter->vertexes.begin())].x;
+    int face_num = 0;
+
 
     //buffer for iteration + erase
     auto prev_vertexes = prev_face.vertexes;
 
+    bool is_contains = false;
     //move a part of vertexes to new face and assign new face relation in them
     for (auto const &point_ind: prev_vertexes) {
+        //due to double type nature statement bellow may not function as intended
+        if ((is_horisontal && points[point_ind].x == x_border) ||
+            (points[point_ind].y == k_coeff * points[point_ind].x + b_coeff)) {
+            points[point_ind].faces.insert((int) faces.size());
+            auto prev_vertex = point_ind;
+            for (auto const &edge_ind: points[point_ind].inserted_edges_ind) {
+                if ((is_horisontal && points[edges[edge_ind].leads[dfs_leads]].x <= x_border) ||
+                        (points[edges[edge_ind].leads[dfs_leads]].y >=
+                        k_coeff * points[edges[edge_ind].leads[dfs_leads]].x + b_coeff)) {
+                    face_num = edges[edge_ind].faces_ind[0] == *face_to_sep ? 0 : 1;
+                    if (edges[edge_ind].faces_ind[face_num] != *face_to_sep) {
+                        continue;
+                    }
+                    prev_face.edges.erase(edge_ind);
+                    new_face.edges.insert(edge_ind);
+                    edges[edge_ind].faces_ind[face_num] = (int) faces.size();
+                }
+            }
+        }
+        if ((is_horisontal && points[point_ind].x >= x_border) ||
+        (points[point_ind].y <= k_coeff * points[point_ind].x + b_coeff)) {
+            continue;
+        }
 
-         if (points[point_ind].x >= x_border && !section_iter->vertexes.contains(point_ind)) {
-             continue;
-         }
 
-         new_face.vertexes.insert(point_ind);
+        new_face.vertexes.insert(point_ind);
+        auto node = points[point_ind].faces.extract(*face_to_sep);
+        node.value() = (int) faces.size();
+        points[point_ind].faces.insert(std::move(node));
+        prev_face.vertexes.erase(point_ind);
+        //remove all edges connected to point witch is no longer in this face
+        for (auto const &edge_ind: points[point_ind].inserted_edges_ind) {
+            face_num = edges[edge_ind].faces_ind[0] == *face_to_sep ? 0 : 1;
+            if (edges[edge_ind].faces_ind[face_num] != *face_to_sep) {
+                continue;
+            }
+            edges[edge_ind].faces_ind[face_num] = (int) faces.size();
+            prev_face.edges.erase(edge_ind);
+            new_face.edges.insert(edge_ind);
+        }
 
-         if (!section_iter->vertexes.contains(point_ind)) {
-             auto node = points[point_ind].faces.extract(*face_to_sep);
-             node.value() = (int) faces.size();
-             points[point_ind].faces.insert(std::move(node));
-             prev_face.vertexes.erase(point_ind);
-             //remove all edges connected to point witch is no longer in this face
-             for (auto const &edge_ind: points[point_ind].inserted_edges_ind) {
-                 // subject to change!!!!
-                 edges[edge_ind].faces_ind[1] = faces.size();
-                 prev_face.edges.erase(edge_ind);
-                 new_face.edges.insert(edge_ind);
-             }
 
-         }
-         else {
-             points[point_ind].faces.insert((int) faces.size());
-             points[point_ind].inserted_edges_ind.push_back(section_iter->edges[0]);
-         }
     }
-
 
     prev_face.edges.insert(section_iter->edges.begin(), section_iter->edges.end());
-    inserted_edges.push_back(section_iter->edges[0]);
+    inserted_edges.insert(inserted_edges.end(), section_iter->edges.begin(), section_iter->edges.end());
     new_face.vertexes.insert(section_iter->vertexes.begin(), section_iter->vertexes.end());
-    edges[section_iter->edges[0]].faces_ind[0] = *face_to_sep;
-    edges[section_iter->edges[0]].faces_ind[1] = faces.size();
+    prev_face.vertexes.insert(section_iter->vertexes.begin(), section_iter->vertexes.end());
+    for (auto const &i: section_iter->edges) {
+        //mb wrong!!
+        edges[i].faces_ind[0] = *face_to_sep;
+        edges[i].faces_ind[1] = (int)faces.size();
+    }
     if (section_iter->vertexes.size() > 2) {
-        //need to check whether contactpoints always on edge of vector!!!
+        //need to check whether contact points always on edge of vector!!!
         auto contact_a = points[*section_iter->vertexes.begin()];
-        auto contact_b = points[*section_iter->vertexes.rbegin()];
+        int current_p_ind = *section_iter->vertexes.begin();
+        auto contact_b = points[section_iter->vertexes.back()];
+        double step = (contact_b.x - contact_a.x) / (double) section_iter->vertexes.size();
+        bool is_spline_type = false;
         if (contact_a.x == contact_b.x) {
-            for (auto const &edge_ind : contact_a.edges_ind) {
-                if (edges[edge_ind])
+            for (auto const &i : contact_a.inserted_edges_ind) {
+                if ((edges[i].is_in_cycle || inserted_points.contains(edges[i].leads[find_leads_spline]))  &&
+                points[edges[i].leads[find_leads_spline]].x == contact_a.x) {
+                    is_spline_type = true;
+                    break;
+                }
             }
-        }
-        for (auto &i : section_iter->vertexes) {
-            if (!points[i].is_in_cycle) {
-                points[i].faces.insert({*face_to_sep, (int)faces.size()});
-                points[i]
+            draw_line(contact_a, contact_b, section_iter->vertexes, section_iter->edges, is_spline_type,
+                      true, *face_to_sep);
+        } else {
+            for (auto const &i : contact_a.inserted_edges_ind) {
+                if ((edges[i].is_in_cycle || inserted_points.contains(edges[i].leads[find_leads_spline])) &&
+                points[edges[i].leads[find_leads_spline]].y == contact_a.y) {
+                    is_spline_type = true;
+                    break;
+                }
             }
+            draw_line(contact_a, contact_b, section_iter->vertexes, section_iter->edges, is_spline_type,
+                      false, *face_to_sep);
         }
-
     }
 
+
     //?
-    new_face.edges.insert(*section_iter->edges.begin());
-
+    new_face.edges.insert(section_iter->edges.begin(), section_iter->edges.end());
+    std::copy(section_iter->vertexes.begin(), section_iter->vertexes.end(),
+              std::inserter(inserted_points, inserted_points.end()));
     faces.push_back(new_face);
- }
-
-
-void insert_segment (section_iter iter) {
-
-
-    one_edge_face_separation(iter);
-
-    // insert segmented part in graph, in new face
-    //TODO OUTER FACE, insert of complex segments
-
-
 
  }
 
  void read_data() {
     int size;
     std::fstream input;
-    input.open("1.txt", std::ios_base::in);
+    input.open("tests/1.txt", std::ios_base::in);
     input >> size;
     points.resize(size);
 
@@ -483,10 +605,8 @@ void init_faces() {
     }
 
     for (auto const &i: cycle_edges) {
-        if (points[i].is_in_cycle) {
             outer_face.edges.insert(i);
             inner_face.edges.insert(i);
-        }
     }
     faces.push_back(std::move(outer_face));
     faces.push_back(std::move(inner_face));
@@ -495,7 +615,7 @@ void init_faces() {
 
 void assign_pos_cycle () {
     int j = 0;
-    double last_x = -1;
+    double last_x = -BASE_CUR_STEP;
     double last_y = 0;
     for (int i = (int)cycle_vertexes.size() -1; i > 0; --i) {
         if (i != cycle_vertexes.size() -1 && cycle_vertexes[i] == cycle_vertexes[cycle_vertexes.size() -1]) {
