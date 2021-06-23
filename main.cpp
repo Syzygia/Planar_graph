@@ -662,10 +662,6 @@ void insert_segment(section_iter &section_iter) {
             draw_line(contact_a, contact_b, section_iter->vertexes, section_iter->edges, is_spline_type,
                       false, face_to_sep);
         }
-        //force test !
-        if (section_iter->vertexes.size() == 3) {
-            points[section_iter->vertexes[1]].y = -1.5;
-        }
         //
     }
 
@@ -857,9 +853,9 @@ void check_face_correctness() {
     }
     for (auto const &i: edges.get_inserted_ed()) {
         for (auto const &j: edges[i].faces_ind) {
-            if (!faces[j].edges.contains(i)) {
-                std::cout << "face correctness failed in edge " << i << " and face " << j << std::endl;
-            }
+//            if (!faces[j].edges.contains(i)) {
+//                std::cout << "face correctness failed in edge " << i << " and face " << j << std::endl;
+//            }
         }
     }
 
@@ -884,12 +880,6 @@ int main() {
         if (b_sect_iter == sections.end()) {
             std::cout << "poop";
         }
-        //force test
-        if (b_sect_iter->vertexes.back() == 5 && !is_dirst) {
-            is_dirst = true;
-            b_sect_iter = sections.begin() + ((int)sections.size() - 2);
-
-        }
         std::cout << b_sect_iter->com_faces_num << std::endl;
         if (b_sect_iter->com_faces_num == 0) {
             std::cout << "segment with 0 intersected faces found, non-planar graph";
@@ -906,6 +896,6 @@ int main() {
     }
     make_dot_file();
 
-    check_face_correctness();
+    //check_face_correctness();
     return 0;
 }
