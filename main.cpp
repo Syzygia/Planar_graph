@@ -555,54 +555,26 @@ double polygonArea(std::vector<double> const &X, std::vector<double> const &Y)
     return (area / 2.0);
 }
 
-std::vector<int> dijkstra (int const &fc_ind, int const &start_p, int const & end_p) {
+std::vector<int> get_path_to_anchor_point (int const &fc_ind, int const &start_p, int const & end_p) {
     auto const &fc = faces[fc_ind];
-    std::unordered_map<int, std::vector<int>> dj_map;
-    for (auto const vertex_ind: fc.vertexes) {
-        //dj_map.insert(std::move(std::make_pair(vertex_ind, std::move(std::vector<int>()))));
-        dj_map.emplace(vertex_ind, 0);
-    }
-    int prev_vertex = start_p;
-    int cur_p_ind = 0;
-    int shortest_path = std::numeric_limits<int>::max();
-    bool is_path_found = false;
-    std::pair<double, double> coord;
-    point fake_point;
-    while (!dj_map.empty()) {
-        shortest_path = std::numeric_limits<int>::max();
-        for (auto edge_ind: points[prev_vertex].drawn_edges_ind) {
-            cur_p_ind = edges[edge_ind].leads[dfs_leads];
-            if (dj_map.contains(cur_p_ind) && (dj_map[cur_p_ind].empty()  ||
-            dj_map[cur_p_ind].size() > dj_map[prev_vertex].size() + 1)) {
-                dj_map[cur_p_ind] = dj_map[prev_vertex];
-                dj_map[cur_p_ind].push_back(prev_vertex);
-            }
-        }
-        dj_map.erase(prev_vertex);
-        for (auto const& node : dj_map) {
-            if (node.second.size() < shortest_path && !node.second.empty()) {
-                shortest_path = (int) node.second.size();
-                prev_vertex = node.first;
-            }
-        }
-        //mb it is excessive
-        is_path_found = true;
-
-        attach_point_point(fc_ind, fake_point, prev_vertex);
-        for (auto const &edge_ind: fc.edges) {
-            if (intersect(fake_point, points[end_p],
-                          points[edges[edge_ind].leads[0]],
-                          points[edges[edge_ind].leads[1]])) {
-                is_path_found = false;
-                break;
-            }
-        }
-        if (is_path_found) {
-            return dj_map[prev_vertex];
-        }
-    }
-    std::cout << "path have not been found";
-    std::exit(1);
+    auto it = fc.vertexes.begin();
+    bool is_start_found = false;
+    std::vector<int> path;
+   while (true) {
+       if (*it == start_p && !is_start_found) {
+            is_start_found = true;
+       }
+       if (is_start_found) {
+           path.push_back(*it);
+       }
+       if (*it == end_p) {
+           return path;
+       }
+       ++it;
+       if (it == fc.vertexes.end()) {
+           it = fc.vertexes.begin();
+       }
+   }
 }
 
 
@@ -714,8 +686,8 @@ void insert_segment(section_iter &section_iter) {
                           points[edges[*section_iter->edges.begin()].leads[1]],
                           points[edges[edge_ind].leads[0]],
                           points[edges[edge_ind].leads[1]])) {
-                path_to_draw = dijkstra(face_to_sep, *section_iter->vertexes.begin(),
-                                        *section_iter->vertexes.rbegin());
+                path_to_draw = get_path_to_anchor_point(face_to_sep, *section_iter->vertexes.begin(),
+                                                        *section_iter->vertexes.rbegin());
                 draw_along(face_to_sep,path_to_draw);
                 return;
             }
