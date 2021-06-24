@@ -540,6 +540,21 @@ void attach_point_point (int const &fc_ind, point &p_to_place, int const &prev_v
 }
 
 
+double polygonArea(std::vector<double> const &X, std::vector<double> const &Y)
+{
+    // Initialize area
+    double area = 0.0;
+    int n = X.size();
+    int j = n - 1;
+    for (int i = 0; i < n; i++)
+    {
+        area += (X[j] + X[i]) * (Y[j] - Y[i]);
+        j = i;  // j is previous vertex to i
+    }
+
+    return (area / 2.0);
+}
+
 std::vector<int> dijkstra (int const &fc_ind, int const &start_p, int const & end_p) {
     auto const &fc = faces[fc_ind];
     std::unordered_map<int, std::vector<int>> dj_map;
@@ -659,10 +674,28 @@ void anti_clock_wise_face_insertion (std::vector<int> const &vertexes, int face_
     }
 }
 
+
+bool is_horisontal_angle_of_rotation(std::vector<int> const &vertexes) {
+    std::vector<double> x_es(vertexes.size());
+    std::vector<double> y_es(vertexes.size());
+    int j = 0;
+    for (auto i: vertexes) {
+        x_es[j] = points[i].x;
+        y_es[j++] = points[i].y;
+    }
+    auto area = polygonArea(x_es, y_es);
+    return area > 0;
+}
+
 //inserts complex segment in faces preserving anti-clockwise rotation
 void change_face_relation_for_path_segment (std::vector<int> const &vertexes, int prev_face, int new_face) {
     anti_clock_wise_face_insertion(vertexes, prev_face);
-    anti_clock_wise_face_insertion(vertexes, new_face);
+    //anti_clock_wise_face_insertion(vertexes, new_face);
+    if (is_horisontal_angle_of_rotation(vertexes)) {
+        faces[new_face].vertexes = {vertexes.rbegin(), vertexes.rend()};
+    } else {
+        faces[new_face].vertexes = {vertexes.begin(), vertexes.end()};
+    }
 }
 
 
@@ -736,8 +769,17 @@ void insert_segment(section_iter &section_iter) {
 
     //buffer for iteration + erase
     auto prev_vertexes = faces[face_to_sep].vertexes;
+    bool is_anchor_adjacent = false;
 
-    bool is_contains = false;
+    //determine whether or not anchor points are neighbors
+    auto prev_vertex = section_iter->vertexes[0];
+    for (auto edge_ind : points[prev_vertex].drawn_edges_ind) {
+        if (edges[edge_ind].leads[dfs_leads] == *section_iter->vertexes.rbegin()) {
+            is_anchor_adjacent = true;
+            break;
+        }
+    }
+
     //move a part of vertexes to new face and assign new face relation in them
     for (auto const &point_ind: prev_vertexes) {
         //due to double type nature statement bellow may not function as intended
@@ -745,11 +787,16 @@ void insert_segment(section_iter &section_iter) {
             (!is_horisontal && points[point_ind].y == k_coeff * points[point_ind].x + b_coeff)) {
             points[point_ind].faces.insert((int) faces.size() - 1);
             new_face.vertexes.push_back(point_ind);
-            auto prev_vertex = point_ind;
+            prev_vertex = point_ind;
             for (auto const &edge_ind: points[point_ind].drawn_edges_ind) {
-                if ((is_horisontal && points[edges[edge_ind].leads[dfs_leads]].x <= x_border) ||
-                    (points[edges[edge_ind].leads[dfs_leads]].y >=
-                        k_coeff * points[edges[edge_ind].leads[dfs_leads]].x + b_coeff)) {
+                if ((is_anchor_adjacent &&
+                (is_horisontal && points[edges[edge_ind].leads[dfs_leads]].x == x_border) ||
+                    (!is_horisontal && points[edges[edge_ind].leads[dfs_leads]].y ==
+                        k_coeff * points[edges[edge_ind].leads[dfs_leads]].x + b_coeff))
+                || (!is_anchor_adjacent &&
+                ((is_horisontal && points[edges[edge_ind].leads[dfs_leads]].x <= x_border) ||
+                    (!is_horisontal && points[edges[edge_ind].leads[dfs_leads]].y >=
+                        k_coeff * points[edges[edge_ind].leads[dfs_leads]].x + b_coeff)))) {
                     face_num = edges[edge_ind].faces_ind[0] == face_to_sep ? 0 : 1;
                     if (edges[edge_ind].faces_ind[face_num] != face_to_sep) {
                         continue;
@@ -761,9 +808,14 @@ void insert_segment(section_iter &section_iter) {
             }
         }
         if ((is_horisontal && points[point_ind].x >= x_border) ||
-            (points[point_ind].y <= k_coeff * points[point_ind].x + b_coeff)) {
+            (!is_horisontal && points[point_ind].y <= k_coeff * points[point_ind].x + b_coeff)) {
             continue;
         }
+        // special case when points on the left should not be moved
+        if (is_anchor_adjacent) {
+            continue;
+        }
+
 
         new_face.vertexes.push_back(point_ind);
         auto node = points[point_ind].faces.extract(face_to_sep);
@@ -789,7 +841,7 @@ void insert_segment(section_iter &section_iter) {
 //    new_face.vertexes.push_back(section_iter->vertexes.begin(), section_iter->vertexes.end());
 //    faces[face_to_sep].vertexes.push_back(section_iter->vertexes.begin(), section_iter->vertexes.end());
     for (auto const &i: section_iter->edges) {
-        edges.insert_edge(edges[i].leads[0], edges[i].leads[1], face_num, (int) faces.size() - 1, i);
+        edges.insert_edge(edges[i].leads[0], edges[i].leads[1], face_to_sep, (int) faces.size() - 1, i);
         //mb wrong!!
 //        edges.insert_edge(edges[i].leads[0], edges[i].leads[1], face_to_sep, (int) faces.size() - 1, i);
 //        edges[i].faces_ind[0] = face_to_sep;
