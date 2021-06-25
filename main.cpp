@@ -7,6 +7,7 @@
 #include <numeric>
 #include <valarray>
 
+
 #define OUTER_FACE 0
 
 #define dfs_leads \
@@ -296,7 +297,7 @@ bool a_equal(double a, double b)
 {
     return fabs(a - b) <= ( (fabs(a) < fabs(b) ? fabs(b) : fabs(a)) * EPS);
 }
-bool intersect(point const &a, point const &b, point const &c, point const &d) {
+bool intersect(point a, point const &b, point const &c, point const &d) {
     double A1 = a.y - b.y, B1 = b.x - a.x, C1 = -A1 * a.x - B1 * a.y;
     double A2 = c.y - d.y, B2 = d.x - c.x, C2 = -A2 * c.x - B2 * c.y;
     double zn = det(A1, B1, A2, B2);
@@ -321,10 +322,12 @@ bool intersect(point const &a, point const &b, point const &c, point const &d) {
 //tries to place a point on a given face with 360 sector and given radius
 std::pair<double, double> find_place(int face_ind, double x, double y, double radius, int point_a , int point_b = -1,
                                      double start_angle = 361, double end_angle = 361) {
+    point rabotay;
     double x_new = 0;
     double y_new = 0;
     int theta = 0;
     bool is_break = false;
+    radius = fabs(radius);
     if (start_angle == 361 || end_angle == 361) {
         start_angle = 0;
         end_angle = 360;
@@ -337,17 +340,22 @@ std::pair<double, double> find_place(int face_ind, double x, double y, double ra
         x_new = x + radius * cos((double)theta / 180 * M_PI);
         y_new = y + radius * sin((double)theta / 180 * M_PI);
         is_break = false;
+        rabotay.x = x_new;
+        rabotay.y = y_new;
         for (auto const &edge_ind: faces[face_ind].edges) {
             if (!edges.get_inserted_ed().contains(edge_ind)) {
                 continue;
             }
-            if (point_b != -1 && intersect(point(x_new, y_new), points[point_b],
+            std::cout << "rab" <<rabotay.x <<std::endl << std::flush;
+            if (point_b != -1 && intersect(rabotay, points[point_b],
                                            points[edges[edge_ind].leads[0]], points[edges[edge_ind].leads[1]]) ||
-                intersect(point(x_new, y_new), points[point_a],
+                intersect(rabotay, points[point_a],
                           points[edges[edge_ind].leads[0]], points[edges[edge_ind].leads[1]])) {
                 is_break = true;
+                std::cout << "rab" <<rabotay.x << std::endl<<std::flush;
                 break;
             }
+            std::cout << "rab" <<rabotay.x << std::endl << std::flush;
         }
         if (is_break) {
             continue;
@@ -511,30 +519,41 @@ void draw_line(const point &start, const point &end, std::vector<int> const &ver
 }
 
 double get_vec_angle(point const &a, point const &b) {
+//    double dot, det;
+//    dot = a.x * b.x + a.y * b.y;
+//    det = a.x * b.y - a.y * b.x;
+//    return atan2(det, dot) * 180 / M_PI;
     double dot, det;
-    dot = a.x * b.x + a.y * b.y;
-    det = a.x * b.y - a.y * b.x;
-    return atan2(det, dot);
+    double vec_b_x = b.x - a.x;
+    double vec_b_y = 0;
+    double vec_d_x = b.x - a.x;
+    double vec_d_y = b.y - a.y;
+
+    dot = vec_b_x * vec_d_x + vec_b_y * vec_d_y;
+    det = vec_b_x * vec_d_y - vec_b_y * vec_d_x;
+    double val = atan2(det, dot) * 180 / M_PI + 360;
+    return val == 360? 360 : (int)val % 360;
+}
+
+double get_distance(point &a, point &b) {
+    double x, y;
+    x = (b.x - a.x) / 2;
+    y = (b.y - a.y) / 2;
+    return x <= y ? x : y;
 }
 
 //tries to place point near another point in the given face
-void attach_point_point (int const &fc_ind, point &p_to_place, int const &prev_vertex) {
-    int vectors_p_ind[2];
+void attach_point_point (int const &fc_ind, point &p_to_place, int const &prev_vertex,
+                         int const & left_vertex, int const &right_vertex, int const &destination) {
     std::pair<double, double> coord;
-    int i = 0;
-    for (auto const &edge_ind: points[prev_vertex].drawn_edges_ind) {
-        if (points[edges[edge_ind].leads[dfs_leads]].faces.contains(fc_ind)) {
-            vectors_p_ind[i++] = edges[edge_ind].leads[dfs_leads];
-        }
-        if (i == 2) {
-            break;
-        }
-    }
-    //this is bad! cause of incorrect angle
-    coord = find_place(fc_ind, points[prev_vertex].x, points[prev_vertex].y, 1, prev_vertex, -1,
-                       get_vec_angle(points[prev_vertex],points[vectors_p_ind[0]]),
-                       get_vec_angle(points[prev_vertex],points[vectors_p_ind[1]]));
+
+    //this is bad! cause of incorrect angle and works dor only given test
+    coord = find_place(fc_ind, points[prev_vertex].x, points[prev_vertex].y,
+                       get_distance(points[prev_vertex], points[destination]), prev_vertex, -1,
+                       get_vec_angle(points[prev_vertex],points[left_vertex]),
+                       get_vec_angle(points[prev_vertex],points[right_vertex]));
     p_to_place.x = coord.first;
+    p_to_place.y = coord.second;
     //warning! if face is really small - wont work!!
 
 }
@@ -579,11 +598,12 @@ std::vector<int> get_path_to_anchor_point (int const &fc_ind, int const &start_p
 
 
 void draw_along(int const &prev_face, std::vector<int> const &path) {
-    //will cause face mismatch
-    auto &new_face = faces.emplace_back();
+    auto &new_face = *faces.rbegin();
     int prev_point = *path.begin();
 
+    int i = -1;
     for (auto const &point_ind: path) {
+        ++i;
         new_face.vertexes.push_back(point_ind);
         faces[prev_face].vertexes.push_back(point_ind);
         if (point_ind == *path.begin()) {
@@ -592,15 +612,19 @@ void draw_along(int const &prev_face, std::vector<int> const &path) {
         }
         if (path.back() == point_ind) {
             points[point_ind].faces.insert((int)faces.size() - 1);
-        } else {
-            //!!!!!!!!!!!!!!!!!!!!!!
-            points.back().faces = {prev_face, (int) faces.size()};
+            continue;
         }
+            //!!!!!!!!!!!!!!!!!!!!!!
+
         point &new_p = points.emplace_back();
+        points.back().faces = {prev_face, (int) faces.size()};
         new_p.faces = {prev_face, (int) faces.size()};
-        attach_point_point(prev_face, new_p, point_ind);
+        attach_point_point(prev_face, new_p, point_ind, path[i + 1], path[i - 1], path.back());
         edges.insert_edge(prev_point, (int) points.size() - 1, prev_face, (int) faces.size() - 1);
         inserted_points.insert((int) points.size() - 1);
+        if (point_ind == *(++path.rbegin())) {
+            edges.insert_edge((int) points.size() - 1, path.back(), prev_face, (int) faces.size() - 1);
+        }
         prev_point = point_ind;
     }
     faces.push_back(std::move(new_face));
