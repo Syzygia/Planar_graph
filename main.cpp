@@ -322,7 +322,7 @@ inline bool between(double a, double b, double c) {
 inline bool intersect_1(double a, double b, double c, double d) {
     if (a > b) std::swap(a, b);
     if (c > d) std::swap(c, d);
-    return std::max(a, c) <= std::min(b, d);
+    return std::max(a, c) < std::min(b, d);
 }
 
 bool a_equal(double a, double b)
@@ -333,6 +333,7 @@ bool intersect(point const &a, point const &b, point const &c, point const &d) {
     double A1 = a.y - b.y, B1 = b.x - a.x, C1 = -A1 * a.x - B1 * a.y;
     double A2 = c.y - d.y, B2 = d.x - c.x, C2 = -A2 * c.x - B2 * c.y;
     double zn = det(A1, B1, A2, B2);
+
     if (!a_equal(zn, 0)) {
         double x = -det(C1, B1, C2, B2) * 1. / zn;
         double y = -det(A1, C1, A2, C2) * 1. / zn;
@@ -381,6 +382,7 @@ std::pair<double, double> find_place(int face_ind, double x, double y, double ra
                                      double start_angle = 361, double end_angle = 361) {
     double x_new = 0;
     double y_new = 0;
+    std::cout << "radius " << radius;
     int theta = 0;
     bool is_break = false;
     radius = fabs(radius);
@@ -533,12 +535,13 @@ void outer_face_pathing(const int &start_p_ind, const int &end_p_ind) {
 
 //attempts to place (many) points in a path between anchor points
 void draw_line(const point &start, const point &end, std::vector<int> const &vertexes, std::vector<int> const &edges_inds,
-               bool is_spline_type, bool is_x_axis, int prev_face) {
+               bool is_spline_type, int prev_face) {
     double step_main = 0;
     double step_collateral = 0;
     int count = -1;
     int edge_ind = 0;
     int prev_vertex_ind = -1;
+    double radius = 0;
     for (auto const &j: vertexes) {
         prev_vertex_ind = j;
         ++count;
@@ -551,16 +554,28 @@ void draw_line(const point &start, const point &end, std::vector<int> const &ver
             step_main = (end.x - start.x) / (double) vertexes.size();
             step_collateral = (end.y - start.y) / (double) vertexes.size();
             std::pair<double, double> coord;
-            if (j != vertexes[vertexes.size() - 2]) {
-                coord = find_place(prev_face, start.x + step_main * count, start.y + step_collateral * count,
-                                   is_x_axis ? fabs(step_collateral) : fabs(step_main), vertexes[count - 1]);
+            if (is_spline_type) {
+                if (fabs(step_collateral) < fabs(step_main)) {
+                    radius = fabs(step_collateral) == 0 ?  fabs(step_main) : fabs(step_collateral);
+                } else {
+                    radius = fabs(step_main) == 0? fabs(step_collateral): fabs(step_main);
+                }
+//                std::cout << "step_coratel " << fabs(step_collateral) << " step_main " << fabs(step_main) << " radius " <<
+//                radius << std::endl;
+                if (j != vertexes[vertexes.size() - 2]) {
+                    coord = find_place(prev_face, start.x + step_main * count, start.y + step_collateral * count,
+                                       radius, vertexes[count - 1]);
+                } else {
+
+                    coord = find_place(prev_face, start.x + step_main * count, start.y + step_collateral * count,
+                                       radius,vertexes[count - 1], vertexes[count + 1]);
+                }
+                points[j].x = coord.first;
+                points[j].y = coord.second;
             } else {
-                coord = find_place(prev_face, start.x + step_main * count, start.y + step_collateral * count,
-                                   is_x_axis ? fabs(step_collateral) : fabs(step_main),
-                                   vertexes[count - 1], vertexes[count + 1]);
+                points[j].x = start.x + step_main * count;
+                points[j].y = start.y + step_collateral * count;
             }
-            points[j].x = coord.first;
-            points[j].y = coord.second;
         }
     }
 }
@@ -764,29 +779,16 @@ void insert_segment(section_iter &section_iter) {
         auto contact_b = points[section_iter->vertexes.back()];
         double step = (contact_b.x - contact_a.x) / (double) section_iter->vertexes.size();
         bool is_spline_type = false;
-        if (contact_a.x == contact_b.x) {
-            for (auto const &i : contact_a.drawn_edges_ind) {
-                if ((edges[i].is_in_cycle || inserted_points.contains(edges[i].leads[find_leads_spline])) &&
-                    points[edges[i].leads[find_leads_spline]].x == contact_a.x) {
-                    is_spline_type = true;
-                    break;
-                }
+
+        for (auto const &i : contact_a.drawn_edges_ind) {
+            if (edges[i].leads[find_leads_spline] == section_iter->vertexes.back()) {
+                is_spline_type = true;
+                break;
             }
-            draw_line(contact_a, contact_b, section_iter->vertexes, section_iter->edges, is_spline_type,
-                      true, face_to_sep);
-        } else {
-            for (auto const &i : contact_a.drawn_edges_ind) {
-                if ((edges[i].is_in_cycle || inserted_points.contains(edges[i].leads[find_leads_spline])) &&
-                    points[edges[i].leads[find_leads_spline]].y == contact_a.y) {
-                    is_spline_type = true;
-                    break;
-                }
-            }
-            draw_line(contact_a, contact_b, section_iter->vertexes, section_iter->edges, is_spline_type,
-                      false, face_to_sep);
         }
+        draw_line(contact_a, contact_b, section_iter->vertexes, section_iter->edges, is_spline_type, face_to_sep);
+
         //
-        // for (auto it = faces[prev_face])
         //force test !
         if (section_iter->vertexes.size() == 3) {
             points[section_iter->vertexes[1]].y = -1.5;
@@ -1023,7 +1025,7 @@ int main() {
         if (b_sect_iter == sections.end()) {
             std::cout << "poop";
         }
-        //force test
+//        //force test
         if (b_sect_iter->vertexes.back() == 5 && !is_dirst) {
             is_dirst = true;
             b_sect_iter = sections.begin() + ((int)sections.size() - 2);
